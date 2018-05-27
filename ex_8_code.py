@@ -5,6 +5,7 @@ import torch.optim as optim
 from torch.utils.data.sampler import SubsetRandomSampler
 from torchvision import datasets, transforms
 import numpy as np
+from matplotlib import pyplot as plt
 
 
 class FirstNet(nn.Module):
@@ -39,12 +40,26 @@ def main():
 
     optimizer = optim.SGD(model.parameters(), lr=lr)
 
+    train_loss_list = []
+    validation_loss_list = []
+
     for epoch in range(epochs):
-        train(epoch, model, optimizer, train_loader)
-        validate(epoch, model, validation_loader)
+        train_loss = train(epoch, model, optimizer, train_loader)
+        train_loss_list.append(train_loss)
+        validation_loss = validate(epoch, model, validation_loader)
+        validation_loss_list.append(validation_loss)
 
     # Test the model.
     test(model, test_loader)
+
+    # Plot average training and validation loss VS number of epochs
+    epochs_list = list(range(epochs))
+    plt.plot(epochs_list, train_loss_list, 'b', label="training loss")
+    plt.plot(epochs_list, validation_loss_list, 'r--', label="validation loss")
+    plt.xlabel("Epochs")
+    plt.ylabel("Average loss")
+    plt.legend()
+    plt.show()
 
 
 def load_data():
@@ -101,32 +116,72 @@ def split_data(data_set):
 
 
 def train(epoch, model, optimizer, train_loader):
+    """
+    Trains the network.
+    :param epoch: number of epoch
+    :param model: neural network
+    :param optimizer: optimizer
+    :param train_loader: train loader
+    :return: training average loss
+    """
     model.train()
+    training_loss = 0
+    correct = 0
     for batch_idx, (data, labels) in enumerate(train_loader):
         optimizer.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, labels)
+
+        # Calculation for checking the loss and accuracy.
+        training_loss += F.nll_loss(output, labels, size_average=False).item()  # sum up batch loss
+        pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
+        correct += pred.eq(labels.data.view_as(pred)).cpu().sum()
+
         loss.backward()
         optimizer.step()
 
+    training_loss /= len(train_loader)
+    training_accuracy = 100.0 * correct / len(train_loader)
+    print('\nTraining set: Epoch: {} Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+        epoch, training_loss, correct, len(train_loader),
+        training_accuracy))
+
+    return training_loss
+
 
 def validate(epoch, model, validation_loader):
+    """
+    Performs a validation check on the current model.
+    :param epoch: number of epoch
+    :param model: neural network
+    :param validation_loader: validation loader
+    :return: Validation average loss
+    """
     model.eval()
-    test_loss = 0
+    validation_loss = 0
     correct = 0
     for data, target in validation_loader:
         output = model(data)
-        test_loss += F.nll_loss(output, target, size_average=False).item()  # sum up batch loss
+        validation_loss += F.nll_loss(output, target, size_average=False).item()  # sum up batch loss
         pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-    test_loss /= len(validation_loader)
-    print('\nValidation set: Epoch: {} Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
-        epoch, test_loss, correct, len(validation_loader),
-        100.0 * correct / len(validation_loader)))
+    validation_loss /= len(validation_loader)
+    validation_accuracy = 100.0 * correct / len(validation_loader)
+    print('Validation set: Epoch: {} Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
+        epoch, validation_loss, correct, len(validation_loader),
+        validation_accuracy))
+
+    return validation_loss
 
 
 def test(model, test_loader):
+    """
+    Tests the final model.
+    :param model: neural network
+    :param test_loader: test loader
+    :return: None
+    """
     model.eval()
     test_loss = 0
     correct = 0
