@@ -15,6 +15,7 @@ class ModelA(nn.Module):
     def __init__(self, image_size):
         super(ModelA, self).__init__()
         self.image_size = image_size
+        # TODO how many layers there should be, 3 or 4?
         self.fc0 = nn.Linear(image_size, 100)
         self.fc1 = nn.Linear(100, 50)
         self.fc2 = nn.Linear(50, 10)
@@ -58,14 +59,15 @@ class ModelC(nn.Module):
         self.fc0 = nn.Linear(image_size, 100)
         self.fc1 = nn.Linear(100, 50)
         self.fc2 = nn.Linear(50, 10)
+        # TODO are the passed sizes correct?
+        self.bn0 = nn.BatchNorm1d(image_size)
         self.bn1 = nn.BatchNorm1d(100)
-        self.bn2 = nn.BatchNorm1d(50)
 
     def forward(self, x):
         x = x.view(-1, self.image_size)
-        x = self.bn1(x)
+        x = self.bn0(x)
         x = F.relu(self.fc0(x))
-        x = self.bn2(x)
+        x = self.bn1(x)
         x = F.relu(self.fc1(x))
         return F.log_softmax(self.fc2(x), dim=1)
 
@@ -84,7 +86,7 @@ def main():
     model_c = ModelC(image_size=28 * 28)
 
     # Initialize hyper-parameters.
-    lr = 0.01
+    lr = 0.05
     epochs = 10
 
     # Setting the optimizers.
@@ -96,7 +98,7 @@ def main():
     # train_and_plot(model_a, optimizer_a, epochs, train_loader, validation_loader, test_loader)
 
     # Train and plot model B
-    train_and_plot(model_b, optimizer_b, epochs, train_loader, validation_loader, test_loader)
+    # train_and_plot(model_b, optimizer_b, epochs, train_loader, validation_loader, test_loader)
 
     # Train and plot model C
     train_and_plot(model_c, optimizer_c, epochs, train_loader, validation_loader, test_loader)
@@ -113,21 +115,24 @@ def train_and_plot(model, optimizer, epochs, train_loader, validation_loader, te
     :param test_loader: test loader
     :return: None
     """
-
     train_loss_list = []
     validation_loss_list = []
 
     for epoch in range(epochs):
+
         # Train the model.
-        train_loss = train(epoch, model, optimizer, train_loader)
+        train(model, optimizer, train_loader)
+
+        # Get training loss.
+        train_loss = test(epoch, model, train_loader, "Training set")
         train_loss_list.append(train_loss)
 
-        # Validate the model.
-        validation_loss = validate(epoch, model, validation_loader)
+        # Get validation loss.
+        validation_loss = test(epoch, model, validation_loader, "Validation set")
         validation_loss_list.append(validation_loss)
 
     # Test the model.
-    test(model, test_loader)
+    test(0, model, test_loader, "Test set")
 
     # Plot average training and validation loss VS number of epochs
     plot_graph(epochs, train_loss_list, validation_loss_list)
@@ -162,7 +167,7 @@ def load_data():
     train_loader = torch.utils.data.DataLoader(
         datasets.FashionMNIST('./data', train=True, download=True,
                        transform=t),
-        batch_size=64, shuffle=True)
+        batch_size=64, shuffle=False)
 
     test_loader = torch.utils.data.DataLoader(
         datasets.FashionMNIST('./data', train=False, transform=t),
@@ -190,15 +195,15 @@ def split_data(data_set):
     validation_sampler = SubsetRandomSampler(validation_idx)
 
     train_loader = torch.utils.data.DataLoader(data_set,
-                    batch_size=1, sampler=train_sampler)
+                    batch_size=64, sampler=train_sampler)
 
     validation_loader = torch.utils.data.DataLoader(data_set,
-                    batch_size=1, sampler=validation_sampler)
+                    batch_size=64, sampler=validation_sampler)
 
     return train_loader, validation_loader
 
 
-def train(epoch, model, optimizer, train_loader):
+def train(model, optimizer, train_loader):
     """
     Trains the network.
     :param epoch: number of epoch
@@ -208,62 +213,20 @@ def train(epoch, model, optimizer, train_loader):
     :return: training average loss
     """
     model.train()
-    training_loss = 0
-    correct = 0
     for batch_idx, (data, labels) in enumerate(train_loader):
         optimizer.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, labels)
-
-        # Calculation for checking the loss and accuracy.
-        training_loss += loss.item() #F.nll_loss(output, labels, size_average=False).item()  # sum up batch loss
-        pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
-        correct += pred.eq(labels.data.view_as(pred)).cpu().sum()
-
         loss.backward()
         optimizer.step()
 
-    training_loss /= len(train_loader)
-    training_accuracy = 100.0 * correct / len(train_loader)
-    print('\nTraining set: Epoch: {} Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        epoch, training_loss, correct, len(train_loader),
-        training_accuracy))
 
-    return training_loss
-
-
-def validate(epoch, model, validation_loader):
-    """
-    Performs a validation check on the current model.
-    :param epoch: number of epoch
-    :param model: neural network
-    :param validation_loader: validation loader
-    :return: Validation average loss
-    """
-    model.eval()
-    validation_loss = 0
-    correct = 0
-    for data, target in validation_loader:
-        output = model(data)
-        validation_loss += F.nll_loss(output, target, size_average=False).item()  # sum up batch loss
-        pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
-        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-
-    validation_loss /= len(validation_loader)
-    validation_accuracy = 100.0 * correct / len(validation_loader)
-    print('Validation set: Epoch: {} Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
-        epoch, validation_loss, correct, len(validation_loader),
-        validation_accuracy))
-
-    return validation_loss
-
-
-def test(model, test_loader):
+def test(epoch, model, test_loader, set_type):
     """
     Tests the final model.
     :param model: neural network
     :param test_loader: test loader
-    :return: None
+    :return: test loss
     """
     model.eval()
     test_loss = 0
@@ -274,10 +237,12 @@ def test(model, test_loader):
         pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-    test_loss /= len(test_loader.dataset)
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100.0 * correct / len(test_loader.dataset)))
+    test_loss /= len(test_loader.sampler)
+    print('\n{}: Epoch: {} set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
+        set_type, epoch, test_loss, correct, len(test_loader.sampler),
+        100.0 * correct / len(test_loader.sampler)))
+
+    return test_loss
 
 
 if __name__ == "__main__":
