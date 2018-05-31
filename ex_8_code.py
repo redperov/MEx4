@@ -64,9 +64,29 @@ class ModelC(nn.Module):
     def forward(self, x):
         x = x.view(-1, self.image_size)
         x = F.relu(self.bn0(self.fc0(x)))
-        x = self.bn1(x)
         x = F.relu(self.bn1(self.fc1(x)))
         return F.log_softmax(self.fc2(x), dim=1)
+
+
+class ModelD(nn.Module):
+    """
+    Convolutional neural network.
+    """
+    def __init__(self):
+        super(ModelD, self).__init__()
+        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
+        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
+        self.mp = nn.MaxPool2d(2)
+        self.fc1 = nn.Linear(320, 50)
+        self.fc2 = nn.Linear(50, 10)
+
+    def forward(self, x):
+        x = F.relu(self.mp(self.conv1(x)))
+        x = F.relu(self.mp(self.conv2(x)))
+        x = x.view(-1, 320)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
 
 
 def main():
@@ -81,27 +101,32 @@ def main():
     model_a = ModelA(image_size=28 * 28)
     model_b = ModelB(image_size=28 * 28)
     model_c = ModelC(image_size=28 * 28)
+    model_d = ModelD()
 
     # Initialize hyper-parameters.
-    lr = 0.01
+    lr = 0.05
     epochs = 10
 
     # Setting the optimizers.
     optimizer_a = optim.SGD(model_a.parameters(), lr=lr)
     optimizer_b = optim.SGD(model_b.parameters(), lr=lr)
     optimizer_c = optim.SGD(model_c.parameters(), lr=lr)
+    optimizer_d = optim.SGD(model_d.parameters(), lr=lr)
 
     # Train and plot model A
     train_and_plot(model_a, optimizer_a, epochs, train_loader, validation_loader, test_loader)
 
     # Train and plot model B
-    # train_and_plot(model_b, optimizer_b, epochs, train_loader, validation_loader, test_loader)
+    train_and_plot(model_b, optimizer_b, epochs, train_loader, validation_loader, test_loader)
 
     # Train and plot model C
-    # train_and_plot(model_c, optimizer_c, epochs, train_loader, validation_loader, test_loader)
+    train_and_plot(model_c, optimizer_c, epochs, train_loader, validation_loader, test_loader)
 
-    # TODO write best model prediction
-    # write_prediction(model, test_loader)
+    # Train and plot model C
+    train_and_plot(model_d, optimizer_d, epochs, train_loader, validation_loader, test_loader)
+
+    # Write the prediction of the best model to a file.
+    write_prediction(model_d, test_loader)
 
 
 def load_data():
@@ -148,7 +173,7 @@ def split_data(data_set):
                     batch_size=64, sampler=train_sampler)
 
     validation_loader = torch.utils.data.DataLoader(data_set,
-                    batch_size=1, sampler=validation_sampler)
+                    batch_size=64, sampler=validation_sampler)
 
     return train_loader, validation_loader
 
@@ -207,7 +232,6 @@ def plot_graph(epochs, train_loss_list, validation_loss_list):
 def train(model, optimizer, train_loader):
     """
     Trains the network.
-    :param epoch: number of epoch
     :param model: neural network
     :param optimizer: optimizer
     :param train_loader: train loader
@@ -263,7 +287,9 @@ def write_prediction(model, test_loader):
 
             # Extract the predicted label.
             predicted_value = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
-            test_file.write(predicted_value + '\n')
+
+            for value in predicted_value:
+                test_file.write(str(value.item()) + '\n')
 
 
 if __name__ == "__main__":
